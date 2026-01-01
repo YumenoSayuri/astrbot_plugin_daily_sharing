@@ -1,0 +1,2 @@
+# astrbot_plugin_daily_sharing
+Daily Sharing是一个为 AstrBot 设计的高级主动交互插件。它不仅仅是一个定时发送器，而是让你的 Bot 像真人一样，根据时间段、生活状态、聊天记忆和网络热点，向指定的好友或群组分享内容。
