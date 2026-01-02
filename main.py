@@ -11,7 +11,7 @@ from astrbot.api import logger
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api.event import filter, AstrMessageEvent, MessageChain
 from astrbot.api import AstrBotConfig
-from .config import TimePeriod, SharingType, SHARING_TYPE_SEQUENCES, NEWS_SOURCE_MAP
+from .config import TimePeriod, SharingType, SHARING_TYPE_SEQUENCES, CRON_TEMPLATES
 from .services.news import NewsService
 from .services.image import ImageService
 from .services.content import ContentService
@@ -21,7 +21,7 @@ from .services.context import ContextService
 class DailySharingPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-        self.config = config
+        self.config = config 
         self.scheduler = AsyncIOScheduler()
         
         # 锁与防抖
@@ -47,7 +47,14 @@ class DailySharingPlugin(Star):
         self.ctx_service = ContextService(context, config)
         self.news_service = NewsService(config)
         self.image_service = ImageService(context, config, self._call_llm_wrapper)
-        self.content_service = ContentService(config, self._call_llm_wrapper, context)
+        
+        # 修正2: 确保传入 state_file 参数
+        self.content_service = ContentService(
+            config, 
+            self._call_llm_wrapper, 
+            context,
+            str(self.state_file)
+        )
 
     async def initialize(self):
         """初始化插件"""
@@ -147,15 +154,8 @@ class DailySharingPlugin(Star):
             if self.scheduler.get_job("auto_share"):
                 self.scheduler.remove_job("auto_share")
 
-            # 预设模板支持
-            templates = {
-                "morning": "0 8 * * *", 
-                "noon": "0 12 * * *", 
-                "evening": "0 19 * * *", 
-                "night": "0 22 * * *", 
-                "twice": "0 8,20 * * *"
-            }
-            actual_cron = templates.get(cron_str, cron_str)
+            # 使用 config.py 中的模板
+            actual_cron = CRON_TEMPLATES.get(cron_str, cron_str)
             parts = actual_cron.split()
             
             if len(parts) == 5:
@@ -276,8 +276,11 @@ class DailySharingPlugin(Star):
                     # 随机延迟
                     delay_str = self.config.get("separate_send_delay", "1.0-2.0")
                     try:
-                        d_min, d_max = map(float, delay_str.split("-"))
-                        await asyncio.sleep(random.uniform(d_min, d_max))
+                        if "-" in str(delay_str):
+                            d_min, d_max = map(float, str(delay_str).split("-"))
+                            await asyncio.sleep(random.uniform(d_min, d_max))
+                        else:
+                            await asyncio.sleep(float(delay_str))
                     except:
                         await asyncio.sleep(1.5)
                     
@@ -339,7 +342,7 @@ class DailySharingPlugin(Star):
         if state.get("last_period") != current_period.value:
             state["sequence_index"] = 0
         
-        # 1. 尝试从配置中获取序列 (对应 conf_schema.json 中的新字段)
+        # 1. 尝试从配置中获取序列
         config_key_map = {
             TimePeriod.MORNING: "morning_sequence",
             TimePeriod.AFTERNOON: "afternoon_sequence",
@@ -430,6 +433,7 @@ class DailySharingPlugin(Star):
                 yield event.plain_result(f"❌ 无效类型。可用: {', '.join([t.value for t in SharingType])}")
                 return
 
+        yield event.plain_result("🚀 正在生成并发送分享内容...")
         await self._execute_share(force_type)
 
     @filter.command("share_enable")

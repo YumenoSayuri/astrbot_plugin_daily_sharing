@@ -1,6 +1,7 @@
 # services/news.py
 import random
 import aiohttp
+import asyncio
 from typing import Optional, List, Dict, Any 
 from astrbot.api import logger
 from ..config import NEWS_SOURCE_MAP, NEWS_TIME_PREFERENCES, TimePeriod
@@ -19,17 +20,24 @@ class NewsService:
         else: return TimePeriod.NIGHT
 
     def select_news_source(self) -> str:
-        """选择主新闻源 """
+        """选择主新闻源"""
         mode = self.config.get("news_random_mode", "config")
         
         if mode == "fixed": 
-            return self.config.get("news_api_source", "zhihu")
+            source = self.config.get("news_api_source", "zhihu")
+            logger.debug(f"[News] 固定模式: {source}")
+            return source
         elif mode == "random": 
-            return random.choice(list(NEWS_SOURCE_MAP.keys()))
+            source = random.choice(list(NEWS_SOURCE_MAP.keys()))
+            logger.info(f"[News] 🎲 完全随机: {NEWS_SOURCE_MAP[source]['name']}")
+            return source
         elif mode == "config":
             c = self.config.get("news_random_sources", ["zhihu", "weibo"])
             valid = [s for s in c if s in NEWS_SOURCE_MAP]
-            return random.choice(valid) if valid else "zhihu"
+            if not valid: valid = ["zhihu"] # 兜底
+            source = random.choice(valid)
+            logger.info(f"[News] 🎲 配置列表随机: {NEWS_SOURCE_MAP[source]['name']}")
+            return source
         elif mode == "time_based": 
             return self._select_by_time()
         
@@ -38,29 +46,44 @@ class NewsService:
     def _select_by_time(self) -> str:
         """基于时间的智能选择"""
         period = self._get_current_period()
+        # 获取偏好，默认为早晨配置
         prefs = NEWS_TIME_PREFERENCES.get(period, NEWS_TIME_PREFERENCES[TimePeriod.MORNING])
+        
+        # 获取用户配置的源列表
         conf = self.config.get("news_random_sources", None)
         
+        selected = "zhihu"
         if conf:
             # 如果配置了限制列表，取交集
             valid = [s for s in conf if s in prefs]
             if valid:
                 # 重新计算权重
                 total = sum(prefs[s] for s in valid)
-                return random.choices(valid, weights=[prefs[s]/total for s in valid], k=1)[0]
-            # 没交集则从配置里随机
-            return random.choice(conf)
+                weights = [prefs[s]/total for s in valid]
+                selected = random.choices(valid, weights=weights, k=1)[0]
+            else:
+                # 没交集则从配置里随机
+                selected = random.choice(conf)
+        else:
+            # 默认使用所有偏好
+            selected = random.choices(list(prefs.keys()), weights=list(prefs.values()), k=1)[0]
+            
+        period_label = {
+            TimePeriod.DAWN: "凌晨", TimePeriod.MORNING: "早晨",
+            TimePeriod.AFTERNOON: "下午", TimePeriod.EVENING: "傍晚", TimePeriod.NIGHT: "深夜"
+        }.get(period, "现在")
         
-        # 默认使用所有偏好
-        return random.choices(list(prefs.keys()), weights=list(prefs.values()), k=1)[0]
+        logger.info(f"[News] 🎲 {period_label}智能选择: {NEWS_SOURCE_MAP[selected]['name']}")
+        return selected
 
     async def get_hot_news(self) -> Optional[tuple]:
         """获取热搜 (包含降级重试逻辑)"""
+        # 0. 检查开关和Key
         if not self.config.get("enable_news_api", True): return None
         
         key = self.config.get("nycnm_api_key", "").strip()
         if not key: 
-            logger.error("[News] API key missing")
+            logger.error("[News] ❌ 未配置柠柚API密钥！")
             return None
 
         # 1. 尝试主要源
@@ -70,7 +93,7 @@ class NewsService:
             return (res, pri_source)
 
         # 2. 失败降级逻辑
-        logger.warning(f"[News] Primary source {pri_source} failed, trying fallback...")
+        logger.warning(f"[News] 主要源 {pri_source} 失败，尝试备用源...")
         
         mode = self.config.get("news_random_mode", "config")
         
@@ -86,32 +109,62 @@ class NewsService:
         # 排除刚才失败的源
         fallback_pool = [s for s in pool if s != pri_source]
         
-        if not fallback_pool: return None
+        if not fallback_pool: 
+            logger.warning("[News] 没有可用的备用源")
+            return None
         
         back_source = random.choice(fallback_pool)
-        logger.info(f"[News] Trying fallback source: {back_source}")
+        logger.info(f"[News] 尝试备用源: {NEWS_SOURCE_MAP[back_source]['name']}")
         
         res = await self._fetch_news(back_source, key)
-        return (res, back_source) if res else None
+        if res:
+            logger.info(f"[News] ✅ 备用源成功")
+            return (res, back_source)
+        
+        logger.warning(f"[News] 所有新闻源均失败")
+        return None
 
     async def _fetch_news(self, source: str, key: str) -> Optional[List[Dict]]:
-        """执行 HTTP 请求"""
+        """执行 HTTP 请求 (带完整错误处理)"""
         if source not in NEWS_SOURCE_MAP: return None
         
-        url = f"{NEWS_SOURCE_MAP[source]['url']}?format=json&apikey={key}"
+        source_name = NEWS_SOURCE_MAP[source]['name']
+        url = NEWS_SOURCE_MAP[source]['url']
+        full_url = f"{url}?format=json&apikey={key}"
+        
         timeout = self.config.get("news_api_timeout", 15)
+        
+        logger.info(f"[News] 获取新闻: {source_name}")
+        logger.debug(f"[News] 请求URL: {url}?format=json&apikey=***")
         
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=timeout) as resp:
+                async with session.get(full_url, timeout=timeout) as resp:
                     if resp.status != 200: 
-                        logger.warning(f"[News] API Error {resp.status} for {source}")
+                        logger.warning(f"[News] API返回状态码: {resp.status}")
+                        if resp.status in (401, 403):
+                            logger.error("[News] ❌ API密钥无效或已过期！")
                         return None
                     
                     data = await resp.json(content_type=None)
-                    return self._parse_response(data)
+                    parsed = self._parse_response(data)
+                    
+                    if parsed:
+                        logger.info(f"[News] ✅ 成功获取 {len(parsed)} 条{source_name}")
+                        return parsed
+                    else:
+                        logger.warning(f"[News] ⚠️ 未能解析到新闻内容")
+                        logger.debug(f"[News] 原始数据: {str(data)[:300]}...")
+                        return None
+                        
+        except asyncio.TimeoutError:
+            logger.error(f"[News] ⏱️ 请求超时: {source_name}")
+            return None
+        except aiohttp.ClientError as e:
+            logger.error(f"[News] 🌐 网络请求失败: {e}")
+            return None
         except Exception as e:
-            logger.error(f"[News] Fetch error for {source}: {e}")
+            logger.error(f"[News] ❌ 解析新闻失败: {e}", exc_info=True)
             return None
 
     def _parse_response(self, data: Any) -> Optional[List[Dict]]:
@@ -121,7 +174,7 @@ class NewsService:
         """
         items = []
         
-        # 1. 定位列表数据位置
+        # 1. 定位列表数据位置 (兼容多种API返回格式)
         if isinstance(data, list):
             items = data
         elif isinstance(data, dict):
@@ -146,14 +199,14 @@ class NewsService:
         for i in items[:15]: # 限制前15条
             if not isinstance(i, dict): continue
             
-            # 标题提取
+            # 标题提取 (兼容多种字段名)
             title = i.get("title") or i.get("name") or i.get("query") or i.get("word")
             if not title: continue
             
-            # 热度提取
+            # 热度提取 (兼容多种字段名)
             hot = i.get("hot") or i.get("hotValue") or i.get("heat") or i.get("hotScore") or ""
             
-            # URL 提取
+            # URL 提取 (兼容多种字段名)
             url_link = i.get("url") or i.get("link") or i.get("mobileUrl") or ""
             
             res.append({

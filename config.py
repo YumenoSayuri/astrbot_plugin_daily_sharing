@@ -15,7 +15,7 @@ class SharingType(Enum):
     NEWS = "news"               # 新闻见闻
     MOOD = "mood"               # 心情随想
     KNOWLEDGE = "knowledge"     # 知识分享
-    RECOMMENDATION = "recommendation"  # 随机推荐（书籍/电影/音乐/动漫）
+    RECOMMENDATION = "recommendation"  # 随机推荐（书籍/电影/音乐/动漫/美食）
 
 # Cron 模板
 CRON_TEMPLATES = {

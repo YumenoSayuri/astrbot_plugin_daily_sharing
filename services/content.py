@@ -1,17 +1,30 @@
 # services/content.py
 import random
-import re
-from datetime import datetime  
+import json
+import os
+from datetime import datetime
 from typing import Optional, Tuple, List, Dict
 from astrbot.api import logger
-from ..config import SharingType, TimePeriod, NEWS_SOURCE_MAP
+from ..config import SharingType, TimePeriod
+
+# 新闻源配置
+NEWS_SOURCE_MAP = {
+    "zhihu": {"name": "知乎热榜", "icon": "📚"},
+    "weibo": {"name": "微博热搜", "icon": "🔥"},
+    "bili": {"name": "B站热搜", "icon": "📺"},
+    "xiaohongshu": {"name": "小红书热搜", "icon": "📕"},
+    "douyin": {"name": "抖音热搜", "icon": "🎵"},
+}
 
 class ContentService:
-    def __init__(self, config, llm_func, context):
+    def __init__(self, config: Dict, llm_func, context, state_file: str):
+        """
+        初始化内容生成服务
+        """
         self.config = config
         self.call_llm = llm_func
         self.context = context 
-        self._last_rec_type = None 
+        self.state_file = state_file 
 
     async def generate(self, stype: SharingType, period: TimePeriod, 
                       target_id: str, is_group: bool, 
@@ -19,38 +32,74 @@ class ContentService:
         """统一生成入口"""
         persona = await self._get_persona()
         
-        # 统一获取当前时间，传给所有功能模块
         now = datetime.now()
         date_str = now.strftime("%Y年%m月%d日") 
         time_str = now.strftime("%H:%M")       
         
-        # 统一上下文数据包
         ctx_data = {
             "is_group": is_group,
-            "life_hint": life_ctx, 
-            "chat_hint": chat_hist, 
+            "life_hint": life_ctx or "", 
+            "chat_hint": chat_hist or "", 
             "persona": persona,
-            "period_label": period.value, 
+            "period_label": self._get_period_label(period), 
             "date_str": date_str,         
             "time_str": time_str          
         }
         
-        # 分发处理
-        if stype == SharingType.GREETING:
+        try:
+            if stype == SharingType.GREETING:
+                return await self._gen_greeting(period, ctx_data)
+            elif stype == SharingType.NEWS:
+                return await self._gen_news(news_data, ctx_data)
+            elif stype == SharingType.MOOD:
+                return await self._gen_mood(period, ctx_data)
+            elif stype == SharingType.KNOWLEDGE:
+                return await self._gen_knowledge(ctx_data)
+            elif stype == SharingType.RECOMMENDATION:
+                return await self._gen_rec(ctx_data)
+            
             return await self._gen_greeting(period, ctx_data)
-        elif stype == SharingType.NEWS:
-            return await self._gen_news(news_data, ctx_data)
-        elif stype == SharingType.MOOD:
-            return await self._gen_mood(period, ctx_data)
-        elif stype == SharingType.KNOWLEDGE:
-            return await self._gen_knowledge(ctx_data)
-        elif stype == SharingType.RECOMMENDATION:
-            return await self._gen_rec(ctx_data)
-        
-        return await self._gen_greeting(period, ctx_data)
+            
+        except Exception as e:
+            logger.error(f"[Content] Generation error: {e}")
+            return None
+
+    # ==================== 状态文件管理 ====================
+
+    async def _load_state_safe(self) -> dict:
+        """安全加载状态文件"""
+        try:
+            if os.path.exists(self.state_file):
+                with open(self.state_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            return {}
+        except Exception as e:
+            logger.warning(f"[Content] Load state failed: {e}")
+            return {}
+
+    async def _save_state_safe(self, state: dict):
+        """安全保存状态文件"""
+        try:
+            # 读取现有文件以防覆盖其他字段
+            current_state = await self._load_state_safe()
+            current_state.update(state) # 更新当前字段
+            
+            with open(self.state_file, 'w', encoding='utf-8') as f:
+                json.dump(current_state, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"[Content] Save state failed: {e}")
+
+    # ==================== 辅助方法 ====================
+
+    def _get_period_label(self, period: TimePeriod) -> str:
+        labels = {
+            TimePeriod.DAWN: "凌晨", TimePeriod.MORNING: "早晨",
+            TimePeriod.AFTERNOON: "下午", TimePeriod.EVENING: "傍晚",
+            TimePeriod.NIGHT: "深夜",
+        }
+        return labels.get(period, "现在")
 
     async def _get_persona(self) -> str:
-        """获取人设 prompt"""
         try:
             persona_id = self.config.get("persona_id", "")
             if persona_id:
@@ -61,41 +110,30 @@ class ContentService:
             personality = await self.context.persona_manager.get_default_persona_v3()
             if personality and personality.get("prompt"):
                 return personality["prompt"]
-            
             return ""
         except Exception as e:
             logger.error(f"[Content] Get persona error: {e}")
             return ""
 
     def _get_preset_greeting(self, period: TimePeriod) -> str:
-        """兜底问候语"""
         greetings = {
-            TimePeriod.DAWN: ["🌃 还没睡吗？要注意休息哦~", "🌃 深夜了，早点休息吧~"],
-            TimePeriod.MORNING: ["🌅 早上好！新的一天开始啦~", "🌅 早安~今天也要加油哦！"],
-            TimePeriod.AFTERNOON: ["☀️ 中午好！辛苦啦，记得吃午饭~", "☀️ 下午好~要不要休息一下？"],
-            TimePeriod.EVENING: ["🌇 傍晚好~今天辛苦啦！", "🌇 晚上好~准备吃晚饭了吗？"],
-            TimePeriod.NIGHT: ["🌙 晚安~做个好梦哦！", "🌙 夜深了，要早点休息呀~"],
+            TimePeriod.DAWN: ["🌃 还没睡吗？要注意休息哦~"],
+            TimePeriod.MORNING: ["🌅 早上好！新的一天开始啦~"],
+            TimePeriod.AFTERNOON: ["☀️ 中午好！辛苦啦，记得吃午饭~"],
+            TimePeriod.EVENING: ["🌇 傍晚好~今天辛苦啦！"],
+            TimePeriod.NIGHT: ["🌙 晚安~做个好梦哦！"],
         }
         return random.choice(greetings.get(period, ["✨ 你好呀~"]))
 
+    # ==================== 生成逻辑 ====================
+
     async def _gen_greeting(self, period: TimePeriod, ctx: dict):
-        """生成问候"""
-        labels = {
-            TimePeriod.DAWN: "凌晨",
-            TimePeriod.MORNING: "早晨",
-            TimePeriod.AFTERNOON: "下午",
-            TimePeriod.EVENING: "傍晚",
-            TimePeriod.NIGHT: "深夜",
-        }
         emojis = {
-            TimePeriod.DAWN: "🌃",
-            TimePeriod.MORNING: "🌅",
-            TimePeriod.AFTERNOON: "☀️",
-            TimePeriod.EVENING: "🌇",
+            TimePeriod.DAWN: "🌃", TimePeriod.MORNING: "🌅",
+            TimePeriod.AFTERNOON: "☀️", TimePeriod.EVENING: "🌇",
             TimePeriod.NIGHT: "🌙",
         }
-        
-        p_label = labels.get(period, "现在")
+        p_label = ctx['period_label']
         p_emoji = emojis.get(period, "✨")
         is_group = ctx['is_group']
         
@@ -142,17 +180,16 @@ class ContentService:
 
 请生成{p_label}问候："""
 
-        res = await self.call_llm(prompt, ctx['persona'])
+        res = await self.call_llm(prompt=prompt, system_prompt=ctx['persona'])
         if res:
             return f"{p_emoji} {res}"
         else:
             return self._get_preset_greeting(period)
 
     async def _gen_mood(self, period, ctx):
-        """生成心情"""
         is_group = ctx['is_group']
         prompt = f"""
-【当前时间】{ctx['date_str']} {ctx['time_str']} ({period.value})
+【当前时间】{ctx['date_str']} {ctx['time_str']} ({ctx['period_label']})
 你想和{'群聊' if is_group else '私聊'}分享一下现在的心情或想法。
 
 {ctx['life_hint']}
@@ -179,14 +216,12 @@ class ContentService:
 5. 直接输出内容
 你的随想："""
         
-        return await self.call_llm(prompt, ctx['persona'])
+        return await self.call_llm(prompt=prompt, system_prompt=ctx['persona'])
 
     async def _gen_news(self, news_data: Tuple[List, str], ctx: dict):
-        """生成新闻"""
         is_group = ctx['is_group']
-        
         if not news_data:
-            #  降级逻辑：如果没有新闻数据，生成纯文本新闻
+            # 降级文本
             prompt = f"""你突然想和朋友分享一些最近的新闻见闻或有趣的事。
 {ctx['life_hint']}
 要求：
@@ -198,11 +233,12 @@ class ContentService:
 6. 字数：80-150字
 7. 直接输出内容，不要有说明文字
 直接输出："""
-            return await self.call_llm(prompt, ctx['persona'])
+            return await self.call_llm(prompt=prompt, system_prompt=ctx['persona'])
 
         news_list, source_key = news_data
-        source_name = NEWS_SOURCE_MAP[source_key]["name"]
-        icon = NEWS_SOURCE_MAP[source_key]["icon"]
+        source_config = NEWS_SOURCE_MAP.get(source_key, {"name": "热搜", "icon": "📰"})
+        source_name = source_config["name"]
+        icon = source_config["icon"]
         
         raw_share_count = self.config.get("news_share_count", "1-2")
         try:
@@ -225,7 +261,6 @@ class ContentService:
         for idx, item in enumerate(news_list[:items_limit], 1):
             hot = item.get("hot", "")
             title = item.get("title", "")
-            
             if hot:
                 hot_str = str(hot)
                 if hot_str.isdigit() and int(hot_str) > 10000:
@@ -270,7 +305,7 @@ class ContentService:
 10. 直接输出分享内容
 直接输出："""
 
-        res = await self.call_llm(prompt, ctx['persona'], timeout=60)
+        res = await self.call_llm(prompt=prompt, system_prompt=ctx['persona'], timeout=60)
         
         if res:
             return f"{icon} {res}"
@@ -278,10 +313,23 @@ class ContentService:
             return f"{icon} 今天的{source_name}~\n\n{news_text[:500]}"
 
     async def _gen_knowledge(self, ctx: dict):
-        """生成冷知识"""
         is_group = ctx['is_group']
         topics = ["有趣的冷知识", "生活小技巧", "健康小常识", "历史小故事", "科学小发现", "心理学小知识"]
-        topic = random.choice(topics)
+        
+        # 1. 读取状态
+        state = await self._load_state_safe()
+        last_topic = state.get("last_knowledge_topic", None)
+        
+        # 2. 过滤掉上次的主题
+        available = [t for t in topics if t != last_topic]
+        if not available: available = topics
+        
+        # 3. 随机选择
+        topic = random.choice(available)
+        
+        # 4. 保存状态
+        await self._save_state_safe({"last_knowledge_topic": topic})
+        logger.info(f"[Content] Knowledge topic: {topic} (Last: {last_topic})")
         
         prompt = f"""请分享一个关于"{topic}"的有趣内容给{'群聊' if is_group else '私聊'}。
 {ctx['life_hint']}
@@ -309,22 +357,28 @@ class ContentService:
 8. 直接输出分享内容
 分享内容："""
         
-        res = await self.call_llm(prompt, ctx['persona'])
+        res = await self.call_llm(prompt=prompt, system_prompt=ctx['persona'])
         return f"📚 {res}" if res else None
 
     async def _gen_rec(self, ctx: dict):
-        """生成推荐 (✅ 使用统一传下来的时间)"""
+        """生成推荐"""
         is_group = ctx['is_group']
-        
-        # 智能随机逻辑
         rec_types = ["书籍", "电影", "音乐", "动漫", "美食"]
-        available = [t for t in rec_types if t != self._last_rec_type]
+        
+        # 1. 读取状态文件
+        state = await self._load_state_safe()
+        last_rec_type = state.get("last_recommendation_type", None)
+        
+        # 2. 筛选可用类型
+        available = [t for t in rec_types if t != last_rec_type]
         if not available: available = rec_types
         
         rec_type = random.choice(available)
-        self._last_rec_type = rec_type 
         
-        logger.info(f"[Content] Rec type: {rec_type}")
+        # 3. 更新并保存状态
+        await self._save_state_safe({"last_recommendation_type": rec_type})
+        
+        logger.info(f"[Content] Rec type: {rec_type} (Last: {last_rec_type})")
 
         prompt = f"""
 【当前时间】{ctx['date_str']} {ctx['time_str']} ({ctx['period_label']})
@@ -366,6 +420,7 @@ class ContentService:
 • "你一定要看看《xxx》这本书..."
 
 ❌ 避免的开头：
+• 严禁使用 "既然..."、"鉴于..."、"因为..." 开头
 • "最近在看《xxx》..." (缺少推荐动作)
 • "刚看完《xxx》..." (只是分享，不是推荐)
 • "这本书超级棒！！！绝对不能错过！！！" (营销号语气)
@@ -382,5 +437,5 @@ class ContentService:
 
 请生成推荐："""
 
-        res = await self.call_llm(prompt, ctx['persona'])
+        res = await self.call_llm(prompt=prompt, system_prompt=ctx['persona'])
         return f"💡 {res}" if res else None
