@@ -121,7 +121,7 @@
 ## 🛠️ 常见问题
 
 **Q: 为什么 Bot 不发图？**
-A: 1. 请确认安装了 `astrbot_plugin_gitee_aiimg`。2. 在配置中开启了 `enable_ai_image`。3. 检查后台日志是否有 LLM 生成 Prompt 失败的记录。
+***A: 1. 请确认安装了 `astrbot_plugin_gitee_aiimg`。2. 在配置中开启了 `enable_ai_image`。3. 检查后台日志是否有 LLM 生成 Prompt 失败的记录。***
 
 **Q: 为什么 Bot 说的新闻是假的？**
 A: 请检查是否配置了 `nycnm_api_key`。如果没有 API Key 或 Key 失效，新闻获取模块会关闭，若 LLM 强行生成新闻可能会出现幻觉。
