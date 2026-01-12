@@ -3,6 +3,9 @@ import random
 import json
 import os
 import re
+import aiofiles
+import asyncio
+from functools import partial
 from datetime import datetime
 from typing import Optional, Tuple, List, Dict
 from astrbot.api import logger
@@ -96,27 +99,37 @@ class ContentService:
             return None
 
     # ==================== 状态文件管理 ====================
+    @staticmethod
+    def _read_json_sync(path: str) -> dict:
+        """同步读取辅助函数 (供 executor 调用)"""
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+
+    @staticmethod
+    def _write_json_sync(path: str, data: dict):
+        """同步写入辅助函数 (供 executor 调用)"""
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
     async def _load_state_safe(self) -> dict:
-        """安全加载状态文件"""
+        """安全加载状态文件 (异步非阻塞)"""
         try:
-            if os.path.exists(self.state_file):
-                with open(self.state_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            return {}
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self._read_json_sync, self.state_file)
         except Exception as e:
             logger.warning(f"[内容服务] 加载状态文件失败: {e}")
             return {}
 
     async def _save_state_safe(self, state: dict):
-        """安全保存状态文件"""
+        """安全保存状态文件 (异步非阻塞)"""
         try:
-            # 读取现有文件以防覆盖其他字段
             current_state = await self._load_state_safe()
-            current_state.update(state) # 更新当前字段
+            current_state.update(state) 
             
-            with open(self.state_file, 'w', encoding='utf-8') as f:
-                json.dump(current_state, f, ensure_ascii=False, indent=2)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._write_json_sync, self.state_file, current_state)
         except Exception as e:
             logger.error(f"[内容服务] 保存状态文件失败: {e}")
 

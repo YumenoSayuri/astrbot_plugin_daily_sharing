@@ -3,6 +3,7 @@ import asyncio
 import json
 import random
 import os
+from functools import partial
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -84,7 +85,7 @@ class DailySharingPlugin(Star):
 
     async def initialize(self):
         """初始化插件"""
-        self.sharing_history = self._load_history()
+        self.sharing_history = await self._load_history() 
         asyncio.create_task(self._delayed_init())
 
     async def terminate(self):
@@ -219,7 +220,7 @@ class DailySharingPlugin(Star):
         if force_type:
             stype = force_type
         else:
-            stype = self._decide_type_with_state(period)
+            stype = await self._decide_type_with_state(period) 
         
         logger.info(f"[DailySharing] 时段: {period.value}, 类型: {stype.value}")
 
@@ -261,7 +262,7 @@ class DailySharingPlugin(Star):
                 
                 if not content:
                     logger.warning(f"[DailySharing] 内容生成失败 {uid}")
-                    self._append_history({
+                    await self._append_history({
                         "timestamp": datetime.now().isoformat(),
                         "target": uid,
                         "type": stype.value,
@@ -302,7 +303,7 @@ class DailySharingPlugin(Star):
                 img_desc = self.image_service.get_last_description()
                 await self.ctx_service.record_to_memos(uid, content, img_desc)
 
-                self._append_history({
+                await self._append_history({
                     "timestamp": datetime.now().isoformat(),
                     "target": uid,
                     "type": stype.value,
@@ -388,27 +389,38 @@ class DailySharingPlugin(Star):
         if 17 <= h < 20: return TimePeriod.EVENING
         return TimePeriod.NIGHT
 
-    def _load_state(self) -> dict:
-        try:
-            if self.state_file.exists():
-                with open(self.state_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except Exception: pass
-        return {"sequence_index": 0, "last_period": None}
+    @staticmethod
+    def _read_json_sync(path):
+        if path.exists():
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return None
 
-    def _save_state(self, state):
+    @staticmethod
+    def _write_json_sync(path, data):
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    async def _load_state(self) -> dict:
         try:
-            with open(self.state_file, 'w', encoding='utf-8') as f:
-                json.dump(state, f, indent=2)
+            loop = asyncio.get_running_loop()
+            data = await loop.run_in_executor(None, self._read_json_sync, self.state_file)
+            return data if data else {"sequence_index": 0, "last_period": None}
+        except Exception: 
+            return {"sequence_index": 0, "last_period": None}
+
+    async def _save_state(self, state):
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._write_json_sync, self.state_file, state)
         except Exception: pass
 
-    def _decide_type_with_state(self, current_period: TimePeriod) -> SharingType:
+    async def _decide_type_with_state(self, current_period: TimePeriod) -> SharingType:
         conf_type = self.basic_conf.get("sharing_type", "auto")
         if conf_type != "auto":
             try: return SharingType(conf_type)
             except: pass
-
-        state = self._load_state()
+        state = await self._load_state() 
         
         if state.get("last_period") != current_period.value:
             state["sequence_index"] = 0
@@ -436,43 +448,36 @@ class DailySharingPlugin(Star):
         state["sequence_index"] = (idx + 1) % len(seq)
         state["last_timestamp"] = datetime.now().isoformat()
         state["last_type"] = selected
-        self._save_state(state)
+        
+        await self._save_state(state) 
         
         try: return SharingType(selected)
         except: return SharingType.GREETING
 
     # ==================== 历史记录管理 ====================
 
-    def _load_history(self):
+    async def _load_history(self):
         try:
-            if self.history_file.exists():
-                with open(self.history_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except: pass
-        return []
+            loop = asyncio.get_running_loop()
+            data = await loop.run_in_executor(None, self._read_json_sync, self.history_file)
+            return data if data else []
+        except: return []
 
-    def _append_history(self, record):
+    async def _append_history(self, record):
         self.sharing_history.append(record)
         if len(self.sharing_history) > 50:
             self.sharing_history = self.sharing_history[-50:]
         
         try:
             loop = asyncio.get_running_loop()
-            loop.run_in_executor(None, self._write_history_sync)
+            await loop.run_in_executor(None, self._write_json_sync, self.history_file, self.sharing_history)
         except Exception as e:
             logger.error(f"[DailySharing] 保存历史记录失败: {e}")
 
-    def _write_history_sync(self):
-        try:
-            with open(self.history_file, 'w', encoding='utf-8') as f:
-                json.dump(self.sharing_history, f, ensure_ascii=False, indent=2)
-        except Exception: pass
-
     async def _save_config_file(self):
         try:
-            if self.config_file.parent.exists():
-                with open(self.config_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.config, f, ensure_ascii=False, indent=2)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._write_json_sync, self.config_file, self.config)
         except Exception as e:
             logger.error(f"[DailySharing] 保存配置失败: {e}")
 
@@ -547,7 +552,7 @@ class DailySharingPlugin(Star):
 
     async def _cmd_status(self, event: AstrMessageEvent):
         """查看详细状态"""
-        state = self._load_state()
+        state = await self._load_state() 
         enabled = self.config.get("enable_auto_sharing", True)
         cron = self.basic_conf.get("sharing_cron")
         
@@ -585,7 +590,7 @@ Cron规则: {cron}
 
     async def _cmd_reset_seq(self, event: AstrMessageEvent):
         """重置序列"""
-        self._save_state({"sequence_index": 0, "last_period": None})
+        await self._save_state({"sequence_index": 0, "last_period": None})
         yield event.plain_result("✅ 序列已重置")
 
     async def _cmd_view_seq(self, event: AstrMessageEvent):
@@ -603,7 +608,7 @@ Cron规则: {cron}
         if not seq:
             seq = SHARING_TYPE_SEQUENCES.get(period, [])
 
-        state = self._load_state()
+        state = await self._load_state()
         idx = state.get("sequence_index", 0)
         
         txt = f"🔄 当前时段: {period.value}\n"

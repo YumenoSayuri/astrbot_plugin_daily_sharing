@@ -75,41 +75,90 @@ class ContextService:
         except:
             return None, None
 
-    def _get_bot_instance(self, pm, adapter_id: str):
-        try:
-            inst = pm.get_inst(adapter_id)
-            if inst and hasattr(inst, "bot") and inst.bot:
-                return inst.bot
-        except: pass
+    def _get_bot_instance(self, adapter_id: str):
+        """
+        获取 Bot 实例 
+        """
+        # 1. 尝试 Context 的标准方法
+        if hasattr(self.context, "get_bot"):
+            try:
+                bot = self.context.get_bot(adapter_id)
+                if bot: return bot
+            except: pass
 
+        pm = self.context.platform_manager
+        all_insts = []
+
+        # 2. 获取所有实例 (List/Dict 兼容性读取)
         try:
-            for attr_name in dir(pm):
-                if attr_name.startswith("__"): continue 
-                try:
-                    val = getattr(pm, attr_name)
-                    if isinstance(val, dict):
-                        for v in val.values():
-                            if hasattr(v, "bot") and v.bot:
-                                return v.bot
-                    elif isinstance(val, list):
-                        for v in val:
-                            if hasattr(v, "bot") and v.bot:
-                                return v.bot
-                except: continue
-        except Exception:
-            pass
+            # 尝试直接访问 .insts 属性
+            if hasattr(pm, "insts"):
+                raw = pm.insts
+                if isinstance(raw, dict):
+                    all_insts.extend(list(raw.values()))
+                elif isinstance(raw, list):
+                    all_insts.extend(raw)
             
+            # 如果没找到，尝试调用 .get_insts() 方法
+            if not all_insts and hasattr(pm, "get_insts") and callable(pm.get_insts):
+                raw = pm.get_insts()
+                if isinstance(raw, dict):
+                    all_insts.extend(list(raw.values()))
+                elif isinstance(raw, list):
+                    all_insts.extend(raw)
+
+        except Exception as e:
+            logger.warning(f"[DailySharing] 获取实例列表失败: {e}")
+
+        if not all_insts:
+            return None
+
+        valid_candidates = []
+
+        # 3. 遍历查找
+        for inst in all_insts:
+            # 尝试获取 bot 对象
+            bot = getattr(inst, "bot", None)
+            
+            # 如果 inst.bot 不存在，检查 inst 本身是否像一个 Bot (拥有 api 属性)
+            if not bot and hasattr(inst, "api"):
+                bot = inst
+            
+            if not bot:
+                continue
+            
+            # 收集有效候选
+            valid_candidates.append(bot)
+
+            inst_id = str(getattr(inst, "id", ""))
+            inst_type = str(getattr(inst, "adapter_type", ""))
+
+            # 精确/模糊匹配
+            if adapter_id and (adapter_id == inst_id or adapter_id == inst_type or adapter_id in inst_id):
+                return bot
+
+        # 4. 智能兜底 (如果名字没对上，但找到了 Bot，就用第一个)
+        if valid_candidates:
+            # 如果只有一个，直接用，不报错（这是最常见的情况）
+            if len(valid_candidates) == 1:
+                return valid_candidates[0]
+            
+            # 如果有多个，用第一个，但记录一条 debug 日志
+            logger.debug(f"[DailySharing] 未精确匹配适配器 '{adapter_id}'，将使用默认 Bot 实例。")
+            return valid_candidates[0]
+
+        # 5. 真没找到
+        logger.warning(f"[DailySharing] ❌ 未找到任何可用的 Bot 实例。")
         return None
 
-    # ==================== TTS 集成 (修改核心) ====================
+    # ==================== TTS 集成 ====================
 
     def _determine_emotion_raw(self, sharing_type: SharingType, period: TimePeriod, content: str = "") -> str:
         """
         根据分享类型、时间段和文本内容，决定 TTS 的情绪字符串。
-        返回: 'happy', 'sad', 'angry', 'neutral' 或 None
         """
         
-        # === 1. 扩充关键词库 (融合了 TTS 插件的词库 + 分享场景特有词) ===
+        # === 1. 扩充关键词库 ===
         
         happy_keywords = [
             "开心", "快乐", "高兴", "喜悦", "愉快", "兴奋", "喜欢", "棒", "不错", "哈哈", 
@@ -147,23 +196,21 @@ class ContextService:
         
         if sharing_type == SharingType.GREETING:
             if period in [TimePeriod.DAWN, TimePeriod.MORNING, TimePeriod.EVENING]:
-                return "happy" # 早上元气一点
+                return "happy" 
             elif period == TimePeriod.NIGHT:
-                return "sad"   # 晚上温柔一点
+                return "sad"   
             else:
                 return "happy"
         
         elif sharing_type == SharingType.MOOD:
             if period == TimePeriod.NIGHT:
-                return "sad" # 深夜网抑云
+                return "sad" 
             else:
-                return "neutral" # 随笔默认中立
+                return "neutral"
 
         elif sharing_type in [SharingType.NEWS, SharingType.KNOWLEDGE, SharingType.RECOMMENDATION]:
-            # 推荐通常是正向的
             if sharing_type == SharingType.RECOMMENDATION:
                 return "happy"
-            # 新闻和知识默认客观中立
             else:
                 return "neutral" 
 
@@ -198,12 +245,11 @@ class ContextService:
         try:
             session_state = None
             
-            # 关键修改：直接操作 TTS 插件的 Session State
+            # 直接操作 TTS 插件的 Session State
             if hasattr(tts_plugin, "_get_session_state"):
-                # 获取该用户的会话状态对象
                 session_state = tts_plugin._get_session_state(target_umo)
                 
-                # 【注入情感】：将我们判断出的情绪直接写入 pending_emotion
+                # 【注入情感】
                 if target_emotion and target_emotion != "neutral":
                     if hasattr(session_state, "pending_emotion"):
                         session_state.pending_emotion = target_emotion
@@ -341,10 +387,9 @@ class ContextService:
             logger.warning(f"[DailySharing] 无法解析目标ID: {target_umo}")
             return {}
 
-        bot = self._get_bot_instance(self.context.platform_manager, adapter_id)
+        bot = self._get_bot_instance(adapter_id)
 
         if not bot:
-            logger.warning(f"[DailySharing] ❌ 无法找到任何可用的 Bot 实例。")
             return {}
 
         limit = 20
