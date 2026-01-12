@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**赋予 Bot “生活感” —— 集成视觉、听觉、记忆的全感官主动分享插件**
+**赋予你的 Bot “生活感” —— 集成视觉、听觉、记忆的全感官主动分享插件**
 
 </div>
 
@@ -48,10 +48,10 @@
 
 | 插件名称 | 必需性 | 作用 | 缺失影响 |
 | :--- | :--- | :--- | :--- |
-| **astrbot_plugin_life_scheduler** | ⭐⭐⭐⭐⭐ | 提供虚拟生活、天气、穿搭 | 分享内容缺少生活细节，配图无法固定穿搭 |
-| **astrbot_plugin_memos_integrator** | ⭐⭐⭐⭐ | 提供记忆存储与检索 | 无法引用历史话题，无法记录分享历史 |
-| **astrbot_plugin_gitee_aiimg** | ⭐⭐⭐⭐ | 提供 AI 绘图能力 | 无法发送配图 |
-| **astrbot_plugin_tts_emotion_router** | ⭐⭐⭐⭐ | 提供情感语音合成 | 无法发送语音消息 |
+| **astrbot_plugin_life_scheduler[<sup>点击前往</sup>](https://github.com/muyouzhi6/astrbot_plugin_life_scheduler) ** | ⭐⭐⭐⭐⭐ | 提供虚拟生活、天气、穿搭 | 分享内容缺少生活细节，配图无法固定穿搭 |
+| **astrbot_plugin_memos_integrator[<sup>点击前往</sup>](https://github.com/zz6zz666/astrbot_plugin_memos_integrator)** | ⭐⭐⭐⭐ | 提供记忆存储与检索 | 无法引用历史话题，无法记录分享历史 |
+| **astrbot_plugin_gitee_aiimg[<sup>点击前往</sup>](https://github.com/muyouzhi6/astrbot_plugin_gitee_aiimg)** | ⭐⭐⭐⭐ | 提供 AI 绘图能力 | 无法发送配图 |
+| **astrbot_plugin_tts_emotion_router[<sup>点击前往</sup>](https://github.com/muyouzhi6/astrbot_plugin_tts_emotion_router)** | ⭐⭐⭐⭐ | 提供情感语音合成 | 无法发送语音消息 |
 
 ## ⚙️ 配置指南
 
@@ -63,7 +63,7 @@
 *   **sharing_type**：推荐 `auto`，让插件根据时间自动轮换分享类型。
 
 ### 2. 新闻源 (News)
-*   **nycnm_api_key**：**(重要)** 前往 柠柚 API [<sup>4</sup>](https://api.nycnm.cn/) 获取密钥。不填则无法获取真实热搜，仅能依靠 LLM 瞎编。
+*   **nycnm_api_key**：**(重要)** 前往 柠柚 API [<sup>点击前往</sup>](https://api.nycnm.cn/) 获取密钥。不填则无法获取真实热搜，仅能依靠 LLM 瞎编。
 *   **news_random_mode**：推荐 `time_based`，启用上述的“时段偏好算法”。
 
 ### 3. 视觉与听觉 (Image & TTS)
