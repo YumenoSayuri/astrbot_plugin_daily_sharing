@@ -2,6 +2,7 @@
 import datetime
 import time
 import re
+import json 
 from typing import Optional, Dict, Any, List
 from astrbot.api import logger
 from ..config import SharingType, TimePeriod 
@@ -581,6 +582,60 @@ class ContextService:
         elif strategy == "minimal":
             if is_discussing or intensity != "low": return False
         return True
+    
+    # ==================== 上下文注入 ====================
+    
+    async def record_bot_reply_to_history(self, target_umo: str, content: str, image_desc: str = None):
+        """
+        将 Bot 主动发送的消息写入 AstrBot 框架的对话历史中。
+        这样用户后续回复时，LLM 能知道 Bot 刚才说了什么。
+        """
+        try:
+            # 1. 获取 ConversationManager
+            conv_manager = self.context.conversation_manager
+            
+            # 2. 获取或创建会话 ID
+            # target_umo 格式如 "QQ:GroupMessage:123456"
+            conversation_id = await conv_manager.get_curr_conversation_id(target_umo)
+            
+            if not conversation_id:
+                # 如果是全新的会话，初始化一个
+                conversation_id = await conv_manager.new_conversation(target_umo)
+            
+            # 3. 获取现有历史
+            conversation = await conv_manager.get_conversation(target_umo, conversation_id)
+            
+            current_history = []
+            if conversation and conversation.history:
+                try:
+                    current_history = json.loads(conversation.history)
+                except Exception:
+                    current_history = []
+            
+            # 4. 构造 Assistant 消息 (包含图片描述)
+            final_content = content
+            if image_desc:
+                # 【修改】不再截断，记录完整描述，防止细节丢失
+                final_content += f"\n\n[发送了一张配图: {image_desc}]"
+
+            # 注意：这里 role 是 assistant，因为是机器人说的
+            bot_message = {
+                "role": "assistant", 
+                "content": final_content
+            }
+            current_history.append(bot_message)
+            
+            # 可选：限制历史记录长度，防止无限膨胀 (例如保留最近 100 条)
+            if len(current_history) > 100:
+                current_history = current_history[-100:]
+            
+            # 5. 写回数据库
+            await conv_manager.update_conversation(target_umo, conversation_id, current_history)
+            
+            logger.debug(f"[上下文] ✅ 已将主动分享内容(含配图描述)写入对话历史: {target_umo}")
+            
+        except Exception as e:
+            logger.warning(f"[上下文] 写入对话历史失败: {e}")
 
     # ==================== 记忆记录 ====================
 

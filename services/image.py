@@ -40,8 +40,8 @@ class ImageService:
             if outfit_info:
                 logger.info(f"[DailySharing] 🎨 使用智能提取的穿搭: {outfit_info}")
 
-        # 生成 Prompt
-        prompt = await self._generate_image_prompt(content, sharing_type, involves_self, outfit_info)
+        # 生成 Prompt (【修改】传入 life_context)
+        prompt = await self._generate_image_prompt(content, sharing_type, involves_self, outfit_info, life_context)
         if not prompt: 
             logger.warning("[DailySharing] 提示词生成失败")
             return None
@@ -127,20 +127,24 @@ class ImageService:
         time_desc = "深夜/休息时间" if is_night else "白天/活动时间"
         
         prompt = f"""
-任务：从以下用户的【生活状态】描述中，提取**符合当前时间段**的角色穿搭，并提取为 **AI绘画的中文提示词**。
+任务：从以下用户的【生活状态】描述中，提取**符合当前时间段**的角色穿搭，并转换为 **AI绘画的中文提示词**。
 
 【当前时间段】：{time_desc}
 【生活状态】：
 {life_ctx}
 
 【提取规则】：
-1. 仔细阅读文中的“穿搭”部分。
+1. 仔细阅读文中的“穿搭”部分，注意文本可能包含一整天的换装过程。
 2. 文本中可能包含“白天穿了...”和“晚上换了...”两套描述。
 3. 如果是【深夜/休息时间】，必须优先提取“睡衣、睡裙、家居服”等晚间描述，忽略白天外出的衣服。
 4. 如果是【白天/活动时间】，必须优先提取“大衣、外出服”等日间描述。
-5. 将提取到的穿搭描述（材质、颜色、款式）提取为逗号分隔的中文单词。
-6. 不要包含动作（如坐在、躺在），只描述衣服。
-7. 仅输出中文提示词，不要输出任何解释。
+5. 【重要】**绝对保留数量词和形容词**：
+   - 如果原文是“两个丸子头”，必须提取为“两个丸子头”或“双丸子头”，**严禁**简化为“丸子头”。
+   - 如果原文是“圆滚滚的”、“毛茸茸的”，必须保留这些形容词。
+   - 必须保留任何表示数量的词（如：双、两、一对）。
+6. 将提取到的内容整理为逗号分隔的中文短语。
+7. 不要包含大动作（如坐在、躺在），只描述外貌和衣着。
+8. 仅输出中文提示词，不要输出任何解释。
 
 请输出中文穿搭提示词："""
         
@@ -209,8 +213,9 @@ class ImageService:
         except: return ""
 
     # ==================== Prompt 生成核心 ====================
-    async def _generate_image_prompt(self, content, stype, involves_self, outfit) -> str:
-        scene_prompt = await self._generate_scene_prompt(content, stype, involves_self, outfit)
+    async def _generate_image_prompt(self, content, stype, involves_self, outfit, life_context=None) -> str:
+        # 【修改】传递 life_context
+        scene_prompt = await self._generate_scene_prompt(content, stype, involves_self, outfit, life_context)
         if not scene_prompt: return ""
         
         final_prompt = scene_prompt
@@ -239,7 +244,7 @@ class ImageService:
         quality_tags = "高质量, 杰作, 高分辨率, 细节丰富, 色彩鲜艳"
         return f"{final_prompt}, {quality_tags}"
 
-    async def _generate_scene_prompt(self, content, sharing_type, involves_self, outfit_info) -> str:
+    async def _generate_scene_prompt(self, content, sharing_type, involves_self, outfit_info, life_context=None) -> str:
         period = self._get_current_period()
         
         # === 光影逻辑与环境 ===
@@ -256,6 +261,11 @@ class ImageService:
             light_vibe = "自然窗光, 明亮, 柔和的日光, 清晰的照明"
             negative_constraint = "不要夜景, 不要星空, 不要黑暗的房间"
 
+        # 【修改】构建生活状态描述，供LLM参考场景
+        life_info_str = ""
+        if life_context:
+            life_info_str = f"\n【重要：当前生活状态/日程】\n{life_context}\n\n💡 构图指示：如果【分享内容】没有明确提到地点，请务必根据【生活状态】来设定背景场景（例如：日程是'在咖啡馆'，背景就画咖啡馆）。"
+
         if involves_self:
             # ================= 画人模式 =================
             if sharing_type == SharingType.GREETING: comp_desc = "肖像, 上半身, 直视镜头"
@@ -267,7 +277,7 @@ class ImageService:
             outfit_constraint = ""
             if outfit_info:
                 filtered = await self._smart_filter_outfit(outfit_info, comp_desc)
-                outfit_constraint = f"\n\n【穿搭信息】\n原始穿搭：{outfit_info}\n过滤后穿搭：{filtered}\n💡 请使用过滤后的穿搭生成提示词（已根据构图删除了不合理的鞋袜）"
+                outfit_constraint = f"\n\n【穿搭信息】\n原始穿搭：{outfit_info}\n过滤后穿搭：{filtered}\n💡 请使用过滤后的穿搭生成提示词，必须准确描述发型数量（如双丸子头）和衣服特征。"
 
             system_prompt = f"""你是一个AI绘画提示词专家。
 请根据用户的分享内容、当前时间段、以及生活状态，生成适合的场景、动作、穿搭描述。
@@ -284,11 +294,14 @@ class ImageService:
 1. 仅输出中文提示词，不要有任何解释
 2. 描述人物的动作、姿态、表情
 3. 描述场景、环境、氛围
-4. 如果提供了穿搭信息，必须优先使用并详细转换为中文提示词
-5. 提示词用逗号分隔，简洁明确
+4. 如果提供了穿搭信息，必须优先使用并详细转换为中文提示词。
+5. **严禁省略数量词**：如果是“两个”或“双”，必须在提示词中体现（例如：双丸子头，双马尾）。
+6. 如果提供了生活状态，请将人物放置在生活状态描述的场景中。
+7. 提示词用逗号分隔，简洁明确
 """
+            # 【修改】将 life_info_str 加入 Prompt
             user_prompt = f"""分享类型：{sharing_type.value}
-分享内容：{content[:300]}{outfit_constraint}
+分享内容：{content[:300]}{life_info_str}{outfit_constraint}
 
 请生成人物场景中文提示词："""
 
@@ -306,10 +319,12 @@ class ImageService:
 1. 仅输出中文提示词，不要有任何解释
 2. 描述场景、环境、氛围、主题
 3. **不要包含人物描述** (无人物)
-4. 提示词用逗号分隔，简洁明确
+4. 如果提供了生活状态，请参考其中的地点信息来设定场景。
+5. 提示词用逗号分隔，简洁明确
 """
+            # 【修改】将 life_info_str 加入 Prompt
             user_prompt = f"""分享类型：{sharing_type.value}
-分享内容：{content[:300]}
+分享内容：{content[:300]}{life_info_str}
 
 请生成纯景物中文提示词："""
         
@@ -347,4 +362,3 @@ class ImageService:
                 logger.error(f"[DailySharing] 生成图片出错: {e}")
                 
         return None
-

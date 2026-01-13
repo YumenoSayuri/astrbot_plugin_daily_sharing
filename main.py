@@ -298,9 +298,14 @@ class DailySharingPlugin(Star):
 
                 # --- 发送消息 ---
                 await self._send(uid, content, img_path, audio_path)
+                
+                # --- 获取图片描述并写入 AstrBot 聊天上下文 ---
+                # 先获取描述（ImageService 生成图片时保存的 Prompt）
+                img_desc = self.image_service.get_last_description()
+                await self.ctx_service.record_bot_reply_to_history(uid, content, image_desc=img_desc)
 
                 # --- 记录与历史 ---
-                img_desc = self.image_service.get_last_description()
+                # 传入相同的 img_desc
                 await self.ctx_service.record_to_memos(uid, content, img_desc)
 
                 await self._append_history({
