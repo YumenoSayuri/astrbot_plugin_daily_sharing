@@ -14,10 +14,10 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageChain
 from astrbot.api import AstrBotConfig
 from astrbot.api.message_components import Record
 from .config import TimePeriod, SharingType, SHARING_TYPE_SEQUENCES, CRON_TEMPLATES, NEWS_SOURCE_MAP
-from .services.news import NewsService
-from .services.image import ImageService
-from .services.content import ContentService
-from .services.context import ContextService
+from .core.news import NewsService
+from .core.image import ImageService
+from .core.content import ContentService
+from .core.context import ContextService
 
 # 类型汉化映射表
 TYPE_CN_MAP = {
@@ -557,19 +557,15 @@ class DailySharingPlugin(Star):
                         return
 
                     # 正常的 LLM 文字新闻模式
-                    type_cn = TYPE_CN_MAP.get(force_type.value, arg)
-                    src_info = f" ({NEWS_SOURCE_MAP[news_src]['name']})" if news_src else ""
                     await self._execute_share(force_type, news_source=news_src)
                     return
 
                 # 其他类型 (问候/心情等)
-                type_cn = TYPE_CN_MAP.get(force_type.value, arg)
                 await self._execute_share(force_type)
                 return
 
             try:
                 force_type = SharingType(arg)
-                type_cn = TYPE_CN_MAP.get(force_type.value, arg)
                 await self._execute_share(force_type)
             except ValueError:
                 yield event.plain_result(f"❌ 未知指令或无效类型: {arg}\n可用类型: 问候, 新闻, 心情, 知识, 推荐")
