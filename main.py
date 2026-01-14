@@ -13,7 +13,7 @@ from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api.event import filter, AstrMessageEvent, MessageChain
 from astrbot.api import AstrBotConfig
 from astrbot.api.message_components import Record
-from .config import TimePeriod, SharingType, SHARING_TYPE_SEQUENCES, CRON_TEMPLATES
+from .config import TimePeriod, SharingType, SHARING_TYPE_SEQUENCES, CRON_TEMPLATES, NEWS_SOURCE_MAP
 from .services.news import NewsService
 from .services.image import ImageService
 from .services.content import ContentService
@@ -36,6 +36,14 @@ CMD_CN_MAP = {
     "知识": SharingType.KNOWLEDGE,
     "推荐": SharingType.RECOMMENDATION
 }
+
+# 新闻源中文映射表
+SOURCE_CN_MAP = {v['name']: k for k, v in NEWS_SOURCE_MAP.items()}
+SOURCE_CN_MAP.update({
+    "知乎": "zhihu", "微博": "weibo", "B站": "bili", 
+    "小红书": "xiaohongshu", "抖音": "douyin", 
+    "头条": "toutiao", "百度": "baidu", "腾讯": "tencent"
+})
 
 @register("daily_sharing", "四次元未来", "定时主动分享所见所闻", "1.0.0")
 class DailySharingPlugin(Star):
@@ -214,7 +222,7 @@ class DailySharingPlugin(Star):
             self._last_share_time = now
             await self._execute_share()
 
-    async def _execute_share(self, force_type: SharingType = None):
+    async def _execute_share(self, force_type: SharingType = None, news_source: str = None):
         """执行分享的主流程"""
         period = self._get_curr_period()
         if force_type:
@@ -227,7 +235,7 @@ class DailySharingPlugin(Star):
         life_ctx = await self.ctx_service.get_life_context()
         news_data = None
         if stype == SharingType.NEWS:
-            news_data = await self.news_service.get_hot_news()
+            news_data = await self.news_service.get_hot_news(news_source)
 
         targets = []
         adapter_id = self.receiver_conf.get("adapter_id", "QQ")
@@ -517,20 +525,51 @@ class DailySharingPlugin(Star):
             async for res in self._cmd_help(event): yield res
             
         elif arg in ["自动", "auto"]:
-            yield event.plain_result("🚀 正在生成并发送分享内容 (自动类型)...")
             await self._execute_share(None)
         else:
             if arg in CMD_CN_MAP:
                 force_type = CMD_CN_MAP[arg]
+                
+                # ===== 新闻类型的特殊逻辑 (处理源和图片) =====
+                if force_type == SharingType.NEWS:
+                    news_src = None
+                    is_image_mode = False
+                    
+                    # 检查参数中是否包含 "图片"
+                    if "图片" in parts:
+                        is_image_mode = True
+                    
+                    # 检查参数中是否包含 指定源
+                    # 遍历除了命令本身外的参数
+                    for p in parts[2:]:
+                        if p == "图片": continue # 跳过关键词
+                        if p in SOURCE_CN_MAP:
+                            news_src = SOURCE_CN_MAP[p]
+                            break
+                        elif p in NEWS_SOURCE_MAP:
+                            news_src = p
+                            break
+
+                    # 如果是图片模式，直接发送图片，绕过 LLM
+                    if is_image_mode:
+                        img_url, src_name = self.news_service.get_hot_news_image_url(news_src)
+                        yield event.image_result(img_url)
+                        return
+
+                    # 正常的 LLM 文字新闻模式
+                    type_cn = TYPE_CN_MAP.get(force_type.value, arg)
+                    src_info = f" ({NEWS_SOURCE_MAP[news_src]['name']})" if news_src else ""
+                    await self._execute_share(force_type, news_source=news_src)
+                    return
+
+                # 其他类型 (问候/心情等)
                 type_cn = TYPE_CN_MAP.get(force_type.value, arg)
-                yield event.plain_result(f"🚀 正在生成并发送 [{type_cn}] 分享...")
                 await self._execute_share(force_type)
                 return
 
             try:
                 force_type = SharingType(arg)
                 type_cn = TYPE_CN_MAP.get(force_type.value, arg)
-                yield event.plain_result(f"🚀 正在生成并发送 [{type_cn}] 分享...")
                 await self._execute_share(force_type)
             except ValueError:
                 yield event.plain_result(f"❌ 未知指令或无效类型: {arg}\n可用类型: 问候, 新闻, 心情, 知识, 推荐")
@@ -627,6 +666,8 @@ Cron规则: {cron}
         """帮助菜单"""
         yield event.plain_result("""📚 每日分享插件帮助:
 /分享 [类型] - 立即执行 (类型: 问候/新闻/心情/知识/推荐)
+/分享 新闻 [源] - 获取指定平台热搜 (如: 微博/B站/头条/百度)
+/分享 新闻 [源] 图片 - 获取热搜长图 (如: /分享 新闻 微博 图片)
 /分享 状态 - 查看运行状态
 /分享 开启 - 启用自动分享
 /分享 关闭 - 禁用自动分享

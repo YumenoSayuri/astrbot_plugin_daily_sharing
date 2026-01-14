@@ -55,44 +55,63 @@ NEWS_SOURCE_MAP = {
         "name": "抖音热搜",
         "icon": "🎵"
     },
+    "toutiao": {
+        "url": "https://api.nycnm.cn/API/toutiao.php",
+        "name": "头条热搜",
+        "icon": "🗞️"
+    },
+    "baidu": {
+        "url": "https://api.nycnm.cn/API/baidu.php",
+        "name": "百度热搜",
+        "icon": "🔍"
+    },
+    "tencent": {
+        "url": "https://api.nycnm.cn/API/txxw.php",
+        "name": "腾讯热搜",
+        "icon": "🐧"
+    },
 }
 
 # 时间段新闻源偏好
 NEWS_TIME_PREFERENCES = {
     TimePeriod.MORNING: {
-        "xiaohongshu": 0.4,  # 早上偏向小红书
-        "weibo": 0.3,
-        "bili": 0.2,
+        "xiaohongshu": 0.3, 
+        "weibo": 0.25,
+        "toutiao": 0.2,
+        "baidu": 0.1,
+        "bili": 0.1,
         "zhihu": 0.05,
-        "douyin": 0.05,
     },
     TimePeriod.AFTERNOON: {
-        "douyin": 0.4,       # 下午偏向抖音
-        "zhihu": 0.25,
-        "bili": 0.2,
+        "douyin": 0.3,
+        "zhihu": 0.2,
+        "baidu": 0.15,
+        "toutiao": 0.15,
+        "bili": 0.1,
         "xiaohongshu": 0.1,
-        "weibo": 0.05,
     },
     TimePeriod.EVENING: {
-        "bili": 0.35,        # 傍晚偏向B站
-        "weibo": 0.3,
-        "douyin": 0.2,
-        "zhihu": 0.1,
-        "xiaohongshu": 0.05,
-    },
-    TimePeriod.NIGHT: {
-        "douyin": 0.4,       # 深夜偏向抖音
         "bili": 0.3,
         "weibo": 0.2,
-        "xiaohongshu": 0.05,
+        "tencent": 0.15,
+        "douyin": 0.15,
+        "zhihu": 0.1,
+        "baidu": 0.1,
+    },
+    TimePeriod.NIGHT: {
+        "douyin": 0.35,
+        "bili": 0.25,
+        "weibo": 0.2,
+        "xiaohongshu": 0.1,
         "zhihu": 0.05,
+        "tencent": 0.05,
     },
     TimePeriod.DAWN: {
-        "xiaohongshu": 0.5,  # 凌晨偏向小红书
+        "xiaohongshu": 0.4,
         "bili": 0.3,
-        "weibo": 0.15,
-        "zhihu": 0.03,
-        "douyin": 0.02,
+        "weibo": 0.1,
+        "zhihu": 0.1,
+        "toutiao": 0.1,
     },
 }
 

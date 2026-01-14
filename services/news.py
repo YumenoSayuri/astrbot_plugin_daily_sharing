@@ -76,7 +76,7 @@ class NewsService:
         logger.info(f"[新闻] 🎲 {period_label}智能选择: {NEWS_SOURCE_MAP[selected]['name']}")
         return selected
 
-    async def get_hot_news(self) -> Optional[tuple]:
+    async def get_hot_news(self, specific_source: str = None) -> Optional[tuple]:
         """获取热搜 (包含降级重试逻辑)"""
         # 检查开关和Key
         if not self.conf.get("enable_news_api", True): return None
@@ -87,12 +87,15 @@ class NewsService:
             return None
 
         # 尝试主要源
-        pri_source = self.select_news_source()
+        if specific_source and specific_source in NEWS_SOURCE_MAP:
+             pri_source = specific_source
+        else:
+             pri_source = self.select_news_source()
+
         res = await self._fetch_news(pri_source, key)
         if res: 
             return (res, pri_source)
 
-        # 失败降级逻辑
         logger.warning(f"[新闻] 主要源 {pri_source} 失败，尝试备用源...")
         
         mode = self.conf.get("news_random_mode", "config")
@@ -122,6 +125,20 @@ class NewsService:
         
         logger.warning(f"[新闻] 所有新闻源均失败")
         return None
+
+    def get_hot_news_image_url(self, source: str = None) -> tuple:
+        """获取热搜图片URL"""
+        if not source or source not in NEWS_SOURCE_MAP:
+            source = self.select_news_source()
+        
+        base_url = NEWS_SOURCE_MAP[source]['url']
+        key = self.conf.get("nycnm_api_key", "").strip()
+        
+        final_url = f"{base_url}?format=image"
+        if key:
+            final_url += f"&apikey={key}"
+            
+        return final_url, NEWS_SOURCE_MAP[source]['name']
 
     async def _fetch_news(self, source: str, key: str) -> Optional[List[Dict]]:
         """执行 HTTP 请求 """
@@ -201,7 +218,7 @@ class NewsService:
             if not isinstance(i, dict): continue
             
             # 标题提取 (兼容多种字段名)
-            title = i.get("title") or i.get("name") or i.get("query") or i.get("word")
+            title = i.get("title") or i.get("name") or i.get("query") or i.get("word") or i.get("keyword")
             if not title: continue
             
             # 热度提取 (兼容多种字段名)
