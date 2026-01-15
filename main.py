@@ -492,7 +492,6 @@ class DailySharingPlugin(Star):
             logger.error(f"[DailySharing] 保存配置失败: {e}")
 
     # ==================== 统一命令入口 ====================
-
     @filter.command("分享")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def handle_share_main(self, event: AstrMessageEvent):
@@ -505,9 +504,7 @@ class DailySharingPlugin(Star):
         if len(parts) == 1:
             yield event.plain_result("❌ 指令格式错误，请指定参数。")
             return
-
         arg = parts[1].lower()
-
         if arg == "状态":
             async for res in self._cmd_status(event): yield res
         elif arg == "开启":
@@ -522,6 +519,7 @@ class DailySharingPlugin(Star):
             async for res in self._cmd_help(event): yield res
             
         elif arg in ["自动", "auto"]:
+            yield event.plain_result("正在生成并发送分享内容 (自动类型)...")
             await self._execute_share(None)
         else:
             if arg in CMD_CN_MAP:
@@ -537,7 +535,6 @@ class DailySharingPlugin(Star):
                         is_image_mode = True
                     
                     # 检查参数中是否包含 指定源
-                    # 遍历除了命令本身外的参数
                     for p in parts[2:]:
                         if p == "图片": continue 
                         if p in SOURCE_CN_MAP:
@@ -546,26 +543,30 @@ class DailySharingPlugin(Star):
                         elif p in NEWS_SOURCE_MAP:
                             news_src = p
                             break
-
                     # 如果是图片模式，直接发送图片，绕过 LLM
                     if is_image_mode:
                         img_url, src_name = self.news_service.get_hot_news_image_url(news_src)
+                        yield event.plain_result(f"正在获取 [{src_name}] 图片...")
                         yield event.image_result(img_url)
                         return
-
                     # 正常的 LLM 文字新闻模式
+                    type_cn = TYPE_CN_MAP.get(force_type.value, arg)
+                    src_info = f" ({NEWS_SOURCE_MAP[news_src]['name']})" if news_src else ""
+                    yield event.plain_result(f"正在生成并发送 [{type_cn}{src_info}] 分享...")
                     await self._execute_share(force_type, news_source=news_src)
                     return
-
                 # 其他类型 (问候/心情等)
+                type_cn = TYPE_CN_MAP.get(force_type.value, arg)
+                yield event.plain_result(f"正在生成并发送 [{type_cn}] 分享...")
                 await self._execute_share(force_type)
                 return
-
             try:
                 force_type = SharingType(arg)
+                type_cn = TYPE_CN_MAP.get(force_type.value, arg)
+                yield event.plain_result(f"正在生成并发送 [{type_cn}] 分享...")
                 await self._execute_share(force_type)
             except ValueError:
-                yield event.plain_result(f"❌ 未知指令或无效类型: {arg}\n可用类型: 问候, 新闻, 心情, 知识, 推荐")
+                yield event.plain_result(f"未知指令或无效类型: {arg}\n可用类型: 问候, 新闻, 心情, 知识, 推荐")
 
     # ==================== 子命令逻辑 ====================
 

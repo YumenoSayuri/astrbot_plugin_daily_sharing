@@ -38,7 +38,7 @@ class ImageService:
         if involves_self and life_context:
             outfit_info = await self._extract_outfit(life_context)
             if outfit_info:
-                logger.info(f"[DailySharing] 🎨 使用智能提取的穿搭: {outfit_info}")
+                logger.debug(f"[DailySharing] 🎨 使用智能提取的穿搭: {outfit_info}")
 
         # 生成 Prompt (【修改】传入 life_context)
         prompt = await self._generate_image_prompt(content, sharing_type, involves_self, outfit_info, life_context)
@@ -101,21 +101,7 @@ class ImageService:
                 if "YES" in result: return True
                 if "NO" in result: return False
         except Exception as e:
-            logger.warning(f"[DailySharing] 智能判断出镜失败: {e}，使用关键词兜底")
-
-        # 关键词兜底
-        keywords = [
-            "我", "我的", "我在", "我正在", "我刚", "我想", "我觉得", "我发现",
-            "咱", "本人", "俺", "吾", "余",
-            "感觉", "觉得", "想起", "回忆", "心情", "开心", "难过", "激动",
-            "喜欢", "讨厌", "推荐", "分享", "发现", "学到", "体会",
-            "今天", "昨天", "刚才", "最近"
-        ]
-        if any(k in content for k in keywords): return True
-
-        # 特定类型兜底
-        if sharing_type in [SharingType.GREETING, SharingType.MOOD, SharingType.RECOMMENDATION]:
-            return True
+            logger.warning(f"[DailySharing] 智能判断出镜失败: {e}")
             
         return False
 
@@ -214,7 +200,7 @@ class ImageService:
 
     # ==================== Prompt 生成核心 ====================
     async def _generate_image_prompt(self, content, stype, involves_self, outfit, life_context=None) -> str:
-        # 【修改】传递 life_context
+        # 传递 life_context
         scene_prompt = await self._generate_scene_prompt(content, stype, involves_self, outfit, life_context)
         if not scene_prompt: return ""
         
@@ -261,7 +247,7 @@ class ImageService:
             light_vibe = "自然窗光, 明亮, 柔和的日光, 清晰的照明"
             negative_constraint = "不要夜景, 不要星空, 不要黑暗的房间"
 
-        # 【修改】构建生活状态描述，供LLM参考场景
+        # 构建生活状态描述，供LLM参考场景
         life_info_str = ""
         if life_context:
             life_info_str = f"\n【重要：当前生活状态/日程】\n{life_context}\n\n💡 构图指示：如果【分享内容】没有明确提到地点，请务必根据【生活状态】来设定背景场景（例如：日程是'在咖啡馆'，背景就画咖啡馆）。"
@@ -299,7 +285,7 @@ class ImageService:
 6. 如果提供了生活状态，请将人物放置在生活状态描述的场景中。
 7. 提示词用逗号分隔，简洁明确
 """
-            # 【修改】将 life_info_str 加入 Prompt
+            # 将 life_info_str 加入 Prompt
             user_prompt = f"""分享类型：{sharing_type.value}
 分享内容：{content[:300]}{life_info_str}{outfit_constraint}
 
@@ -322,7 +308,7 @@ class ImageService:
 4. 如果提供了生活状态，请参考其中的地点信息来设定场景。
 5. 提示词用逗号分隔，简洁明确
 """
-            # 【修改】将 life_info_str 加入 Prompt
+            # 将 life_info_str 加入 Prompt
             user_prompt = f"""分享类型：{sharing_type.value}
 分享内容：{content[:300]}{life_info_str}
 
