@@ -210,14 +210,13 @@ class ImageService:
             appearance = await self._get_appearance_keywords()
             if appearance: final_prompt = f"{appearance}, {final_prompt}"
 
-        # 强制注入环境修正词（Hard Fix），专门解决窗户变白天的问题
+        # 强制注入环境修正词
         period = self._get_current_period()
         time_enforcement = ""
         
         if period in [TimePeriod.NIGHT, TimePeriod.DAWN]:
             # 夜晚强制词
-            # "窗外黑暗" 是解决窗户漏光问题的核心 Tag
-            time_enforcement = ", 夜晚, 午夜, 深色天空, 窗外黑暗, 城市夜景" 
+            time_enforcement = ", 夜晚, 午夜, 深色天空, 幽暗环境, 城市夜景" 
         elif period == TimePeriod.EVENING:
             time_enforcement = ", 日落, 黄昏, 金色光照"
         else:
@@ -236,15 +235,15 @@ class ImageService:
         # === 光影逻辑与环境 ===
         if period in [TimePeriod.NIGHT, TimePeriod.DAWN]:
             time_context = "夜晚/深夜"
-            light_vibe = "昏暗的灯光, 室内人造光 (台灯/屏幕光), 电影感布光, 舒适的氛围，窗外必须是漆黑的夜空, 只有城市灯光"
-            negative_constraint = "不要阳光, 不要蓝天, 不要明亮的白天景色，窗户里不能透出白天的光"
+            light_vibe = "昏暗的光线, 电影感布光, 舒适的氛围, 深色调, (如果是室内则是人造光), (如果是室外则是城市灯光)"
+            negative_constraint = "不要阳光, 不要蓝天, 不要明亮的白天景色, 画面整体不要太亮"
         elif period == TimePeriod.EVENING:
             time_context = "傍晚/黄昏"
             light_vibe = "温暖的金色光线, 日落氛围, 柔和的阴影"
             negative_constraint = "不要正午强光, 不要漆黑的夜晚"
         else:
             time_context = "白天"
-            light_vibe = "自然窗光, 明亮, 柔和的日光, 清晰的照明"
+            light_vibe = "自然光, 明亮, 柔和的日光, 清晰的照明"
             negative_constraint = "不要夜景, 不要星空, 不要黑暗的房间"
 
         # 构建生活状态描述，供LLM参考场景

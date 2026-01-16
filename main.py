@@ -552,18 +552,18 @@ class DailySharingPlugin(Star):
                     # 正常的 LLM 文字新闻模式
                     type_cn = TYPE_CN_MAP.get(force_type.value, arg)
                     src_info = f" ({NEWS_SOURCE_MAP[news_src]['name']})" if news_src else ""
-                    yield event.plain_result(f"正在生成并发送 [{type_cn}{src_info}] 分享...")
+                    yield event.plain_result(f"正在生成并发送分享 [{type_cn}{src_info}] ...")
                     await self._execute_share(force_type, news_source=news_src)
                     return
                 # 其他类型 (问候/心情等)
                 type_cn = TYPE_CN_MAP.get(force_type.value, arg)
-                yield event.plain_result(f"正在生成并发送 [{type_cn}] 分享...")
+                yield event.plain_result(f"正在生成并发送分享 [{type_cn}] ...")
                 await self._execute_share(force_type)
                 return
             try:
                 force_type = SharingType(arg)
                 type_cn = TYPE_CN_MAP.get(force_type.value, arg)
-                yield event.plain_result(f"正在生成并发送 [{type_cn}] 分享...")
+                yield event.plain_result(f"正在生成并发送分享 [{type_cn}] ...")
                 await self._execute_share(force_type)
             except ValueError:
                 yield event.plain_result(f"未知指令或无效类型: {arg}\n可用类型: 问候, 新闻, 心情, 知识, 推荐")
