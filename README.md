@@ -14,7 +14,7 @@
 
 ## ✨ 核心特性
 
-### 1. 🔄 闭环上下文注入 (感谢木有知[<sup>url</sup>](https://github.com/muyouzhi6)大佬提供修改建议) 
+### 1. 🔄 闭环上下文注入 (感谢木有知<sup>url</sup> [<sup>1</sup>](https://github.com/muyouzhi6)大佬提供修改建议) 
 *   **拒绝“断片”**：普通定时插件发送的消息往往不在 LLM 的上下文中，Bot 发完就忘。本插件会将主动发送的文案**回写到 AstrBot 的会话历史 (Conversation History) 中**。
 *   **视觉语义化**：当 Bot 发送图片时，插件会将**生成图片的 Prompt（画面描述）** 转化为文字（如 `[发送了一张配图: 少女在咖啡厅，穿着米色毛衣，阳光洒在脸上...]`）写入短期记忆。
 *   **自然追问**：
@@ -56,10 +56,10 @@
 
 | 插件名称 | 必需性 | 作用 | 缺失影响 |
 | :--- | :--- | :--- | :--- |
-| **astrbot_plugin_life_scheduler[<sup>url</sup>](https://github.com/muyouzhi6/astrbot_plugin_life_scheduler)** | ⭐⭐⭐⭐⭐ | 提供虚拟生活、天气、穿搭 | 分享内容缺少生活细节，配图无法固定穿搭 |
-| **astrbot_plugin_memos_integrator[<sup>url</sup>](https://github.com/zz6zz666/astrbot_plugin_memos_integrator)** | ⭐⭐⭐⭐ | 提供记忆存储与检索 | 无法引用历史话题，无法记录分享历史 |
-| **astrbot_plugin_gitee_aiimg[<sup>url</sup>](https://github.com/muyouzhi6/astrbot_plugin_gitee_aiimg)** | ⭐⭐⭐⭐ | 提供 AI 绘图能力 | 无法发送配图 |
-| **astrbot_plugin_tts_emotion_router[<sup>url</sup>](https://github.com/muyouzhi6/astrbot_plugin_tts_emotion_router)** | ⭐⭐⭐⭐ | 提供情感语音合成 | 无法发送语音消息 |
+| **astrbot_plugin_life_scheduler<sup>url</sup> [<sup>2</sup>](https://github.com/muyouzhi6/astrbot_plugin_life_scheduler)** | ⭐⭐⭐⭐⭐ | 提供虚拟生活、天气、穿搭 | 分享内容缺少生活细节，配图无法固定穿搭 |
+| **astrbot_plugin_memos_integrator<sup>url</sup> [<sup>3</sup>](https://github.com/zz6zz666/astrbot_plugin_memos_integrator)** | ⭐⭐⭐⭐ | 提供记忆存储与检索 | 无法引用历史话题，无法记录分享历史 |
+| **astrbot_plugin_gitee_aiimg<sup>url</sup> [<sup>4</sup>](https://github.com/muyouzhi6/astrbot_plugin_gitee_aiimg)** | ⭐⭐⭐⭐ | 提供 AI 绘图能力 | 无法发送配图 |
+| **astrbot_plugin_tts_emotion_router<sup>url</sup> [<sup>5</sup>](https://github.com/muyouzhi6/astrbot_plugin_tts_emotion_router)** | ⭐⭐⭐⭐ | 提供情感语音合成 | 无法发送语音消息 |
 
 ## ⚙️ 配置指南
 
@@ -71,7 +71,7 @@
 *   **sharing_type**：推荐 `auto`，让插件根据时间自动轮换分享类型。
 
 ### 2. 新闻源 (News)
-*   **nycnm_api_key**：**(重要)** 前往 柠柚 API [<sup>url</sup>](https://api.nycnm.cn/) 获取密钥。不填则无法获取真实热搜，仅能依靠 LLM 瞎编。
+*   **nycnm_api_key**：**(重要)** 前往 柠柚 API <sup>url</sup> [<sup>6</sup>](https://api.nycnm.cn/) 获取密钥。不填则无法获取真实热搜，仅能依靠 LLM 瞎编。
 *   **news_random_mode**：推荐 `time_based`，启用上述的“时段偏好算法”。
 
 ### 3. 视觉与听觉 (Image & TTS)
@@ -79,6 +79,21 @@
 *   **image_conf -> separate_text_and_image**：开启后图文分开发送，更像真人。
 *   **tts_conf -> enable_tts**：开启语音。
 *   **tts_conf -> prefer_audio_only**：开启后，如果语音生成成功，将**不再发送文字**（仅发语音+图），沉浸感更强。
+
+## 💬 自然语言交互 (LLM Trigger)
+
+得益于 AstrBot 的函数调用能力，你不需要死记硬背指令，直接和 Bot 聊天即可触发分享！
+
+| 你的意图 | 你可以这样说 (自然语言) | Bot 的反应 |
+| :--- | :--- | :--- |
+| **看新闻** | “今天有什么大瓜？”<br>“看看微博热搜”<br>“B站现在流行什么？” | 调用 `新闻` 模块，发送对应平台的热搜摘要。 |
+| **看新闻长图** | “发张微博热搜的图片”<br>“看看知乎热榜的长图” | 调用 `新闻` 模块 (图片模式)，直接发送实时截图。 |
+| **求安慰/打招呼** | “早安”<br>“我好累啊求安慰”<br>“该睡觉了” | 调用 `问候` 模块，结合当前时间暖心回复。 |
+| **涨姿势** | “讲个冷知识”<br>“有什么生活小技巧吗？” | 调用 `知识` 模块，分享百科知识或生活妙招。 |
+| **求推荐** | “书荒了推荐本书”<br>“今晚吃什么？”<br>“推荐一部好看的电影” | 调用 `推荐` 模块，根据分类推荐高分作品。 |
+| **听碎碎念** | “你现在心情怎么样？”<br>“你在干嘛？” | 调用 `心情` 模块，结合 Bot 的生活日程分享状态。 |
+
+> **提示**：如果想让 Bot 发语音或配图，也可以直接说：“讲个冷知识，**要发语音哦**” 或 “分享下心情，**带张自拍**”。
 
 ## 🎮 指令列表
 
